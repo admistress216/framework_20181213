@@ -12,6 +12,9 @@ class DB
     protected $dsn;
     protected $userName;
     protected $password;
+    protected $_select = "SELECT *";//sql的select
+    protected $_from = "";//sql的from
+    protected $_limit = "";//sql的limit
     protected $_table_prefix = "";//表前缀
     protected $_last_query = "";//最后一条查询
     protected $charset = "utf8mb4";
@@ -45,11 +48,40 @@ class DB
         $this->init();
     }
 
+    /**
+     * 初始化工作
+     */
     private function init()
     {
         if($this->charset) {
             $this->query("set names {$this->charset}");
         }
+    }
+
+    /**
+     * @desc 构造select条件
+     * @param $select
+     * @return $this
+     * @example $this->db->select("id, name as name1")
+     */
+    public function select($select)
+    {
+        $this->_select = "SELECT ".$select;
+        return $this;
+    }
+
+    /**
+     * @desc 构造from条件
+     * @param $from
+     * @return $this
+     */
+    public function from($from)
+    {
+        $from = trim($from);
+        $from = "FROM ".$this->_table_prefix.$from;
+
+        $this->_from = $from;
+        return $this;
     }
 
     public function query($sql, $bindValue = [], $isReset = true)
@@ -62,6 +94,40 @@ class DB
             $this->throwPdoError($this->pdo);
         }
         return new DB_Result($statement, $this);
+    }
+
+    public function get()
+    {
+        $sql = $this->getPreSQL();
+        return $this->query($sql);
+    }
+
+    public function limit($limit, $offset=0)
+    {
+        $limit = intval($limit);
+        $offset = intval($offset);
+
+        $limit = "LIMIT $limit";
+        $this->_limit = $offset ? $limit." OFFSET $offset" : $limit;
+        return $this;
+    }
+
+    //得到预编译sql
+    protected function getPreSQL($sel=NULL)
+    {
+        if($sel) {
+            $select = $sel;
+        } else {
+            $select = empty($this->_select) ? "SELECT *" : $this->_select;
+        }
+        $from = $this->_from;
+        if (empty($from)) {
+            throw new \Exception("未指明表名");
+        }
+        $limit = $this->_limit;
+        $sql = $select." ".$from;
+        $sql .= $limit ? " $limit" : "";
+        return $sql;
     }
 
     private function throwPdoError(\PDO $pdo)

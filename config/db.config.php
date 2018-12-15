@@ -13,6 +13,6 @@ $config[DB_SLAVE_NAME] = [
     "user"=>DB_SLAVE_USER,
     "port"=>DB_SLAVE_PORT,
     "password"=>DB_SLAVE_PASSWORD,
-    "db_prefix"=>DB_SLAVE_PASSWORD,
+    "db_prefix"=>DB_SLAVE_PREFIX,
 ];
 return $config;
