@@ -14,6 +14,8 @@ class DB
     protected $password;
     protected $_select = "SELECT *";//sql的select
     protected $_from = "";//sql的from
+    protected $_where = []; //where条件的key
+    protected $_where_value = [];//where条件需要绑定的值
     protected $_limit = "";//sql的limit
     protected $_table_prefix = "";//表前缀
     protected $_last_query = "";//最后一条查询
@@ -84,22 +86,99 @@ class DB
         return $this;
     }
 
+    /**
+     * @dsec 构造where条件
+     * @param array | string $where
+     * @return $this
+     * @example1 $this->db->where(["name"=>"tom","age"=>11])  or $this->db->where(["id"=>[1,2,3,4]]);
+     * @example2 $this->db->where("name=? and age=?",['dxp',2]);
+     */
+    public function where($where, array $bindValues = [])
+    {
+        if (is_array($where)) {
+            foreach($where as $key => $val) {
+                if (!is_array($val)) {
+                    $this->_where[] = $key;
+                    $this->_where_value[] = $val;
+                } else {
+                    $str = $key. " IN(";
+                    $marks = [];
+                    foreach($val as $k=>$v) {
+                        array_push($marks, "?");
+                        array_push($this->_where_value, $v);
+                    }
+                    $markStr = implode(",", $marks);
+                    $this->_where[] = $str.$markStr.")";
+                }
+            }
+        }
+        if (is_string($where)) {
+            $this->_where[] = $where;
+            $this->_where_value = array_merge($this->_where_value, $bindValues);
+        }
+        return $this;
+    }
+
     public function query($sql, $bindValue = [], $isReset = true)
     {
         $sql = trim($sql);
-        $this->_last_query = $sql;
 
-        $statement = $this->pdo->query($sql);
-        if ($statement === FALSE) {
-            $this->throwPdoError($this->pdo);
+        if($bindValue) {
+            $n_sql = $sql;
+            $last_query = "";
+            $n_bindValue = $this->getSqlVal($bindValue);
+            foreach($n_bindValue as $v) {
+                if(($pos = strpos($n_sql, "?")) !== false) {
+                    $last_query .= substr($n_sql, 0, $pos).$v;
+                    $n_sql = substr($n_sql, $pos + 1);
+                }
+            }
+            $this->_last_query = $last_query.$n_sql;
+        } else {
+            $this->_last_query = $sql;
         }
-        return new DB_Result($statement, $this);
+
+        if ($bindValue) {
+            $statement = $this->pdo->prepare($sql);
+            if ($statement === FALSE) {
+                $this->throwPdoError($this->pdo);
+            }
+            if ($statement->execute($bindValue) === FALSE) {
+                $this->throwResultError($statement);
+            }
+            return new DB_Result($statement, $this);
+        } else {
+            $statement = $this->pdo->query($sql);
+            if ($statement === FALSE) {
+                $this->throwPdoError($this->pdo);
+            }
+            return new DB_Result($statement, $this);
+        }
     }
 
     public function get()
     {
         $sql = $this->getPreSQL();
-        return $this->query($sql);
+        $val = $this->whVals();
+        return $this->query($sql, $val);
+    }
+
+    protected function getCompileWh()
+    {
+        $temp = [];
+        foreach($this->_where as $v) {
+            if (preg_match('/\band\b|\bor\b/i', $v) == 0) {
+                if (preg_match('/<|>|<=|>=|\!=|\blike\b|\bin\b/i', $v) == 0) {
+                    array_push($temp, $v."=?");
+                } elseif (preg_match('/\bin\b/i', $v)) {
+                    array_push($temp, $v);
+                }
+            } else {
+                array_push($temp, "($v)");
+            }
+        }
+        $andStr = implode(" AND ", $temp);
+        return $andStr ? "WHERE ".$andStr : $andStr;
     }
 
     public function limit($limit, $offset=0)
@@ -110,6 +189,10 @@ class DB
         $limit = "LIMIT $limit";
         $this->_limit = $offset ? $limit." OFFSET $offset" : $limit;
         return $this;
+    }
+
+    protected function whVals() {
+        return $this->_where_value;
     }
 
     //得到预编译sql
@@ -124,10 +207,20 @@ class DB
         if (empty($from)) {
             throw new \Exception("未指明表名");
         }
+        $where = $this->getCompileWh();
         $limit = $this->_limit;
         $sql = $select." ".$from;
+        $sql .= $where ? " $where" : "";
         $sql .= $limit ? " $limit" : "";
         return $sql;
+    }
+
+    private function getSqlVal(array $val)
+    {
+        foreach($val as &$v){
+            $v = is_string($v) ? "'{$v}'" : $v;
+        }
+        return $val;
     }
 
     private function throwPdoError(\PDO $pdo)
@@ -137,5 +230,13 @@ class DB
             return [];
         }
         throw new DbException("执行sql语言产生错误错误码:==>{$errorInfo[0]};错误消息:==>{$errorInfo[2]};");
+    }
+    private function throwResultError(\PDOStatement $query)
+    {
+        $errorInfo = $query->errorInfo();
+        if($errorInfo[0] === "00000"){
+            return [];
+        }
+        throw new DbException("获取结果集错误:错误码:==>{$errorInfo[0]};错误消息:==>{$errorInfo[2]};");
     }
 }
