@@ -16,6 +16,7 @@ class DB
     protected $_from = "";//sql的from
     protected $_where = []; //where条件的key
     protected $_where_value = [];//where条件需要绑定的值
+    protected $_orderBy = [];//排序
     protected $_limit = "";//sql的limit
     protected $_table_prefix = "";//表前缀
     protected $_last_query = "";//最后一条查询
@@ -119,6 +120,18 @@ class DB
         return $this;
     }
 
+    public function order_by(array $orders)
+    {
+        foreach($orders as $key => $val) {
+            $order = strtolower($val);
+            if ($order != "asc" && $order != "desc") {
+                continue;
+            }
+            $this->_orderBy[$key] = $val;
+        }
+        return $this;
+    }
+
     public function query($sql, $bindValue = [], $isReset = true)
     {
         $sql = trim($sql);
@@ -208,9 +221,16 @@ class DB
             throw new \Exception("未指明表名");
         }
         $where = $this->getCompileWh();
+
+        $orderArr = [];
+        foreach($this->_orderBy as $key=> $order) {
+            array_push($orderArr, $key." ".$order);
+        }
+        $orderBy = !empty($orderArr) ? " ORDER BY ".implode(",", $orderArr) : "";
         $limit = $this->_limit;
         $sql = $select." ".$from;
         $sql .= $where ? " $where" : "";
+        $sql .= $orderBy ? $orderBy : "";
         $sql .= $limit ? " $limit" : "";
         return $sql;
     }
